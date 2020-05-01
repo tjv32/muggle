@@ -1,0 +1,9 @@
+Median/Mean
+Groups
+Color change let user 
+select color group
+t distirbtion line across gene data and list the most significant genes
+t horizontal bar to compare group
+
+difference heatmap
+clustergram
