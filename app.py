@@ -1780,4 +1780,4 @@ def check_difference_measure_cache(cache, x_dd_value, y_dd_value):
 
 if __name__ == '__main__':
 
-    app.run_server(debug=True)
+    app.run_server()
