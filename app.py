@@ -64,6 +64,7 @@ single_gene_options = [{'label': i, 'value': i} for i in row_labels]
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.GRID])
 app.config['suppress_callback_exceptions'] = True
+server = app.server
 
 
 heatmap_Data = go.Heatmap(
