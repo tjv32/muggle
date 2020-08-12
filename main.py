@@ -9,20 +9,40 @@ import dash_html_components as html
 import numpy as np
 from scipy import stats
 from dash.dependencies import Input, Output, State
+from dash_extensions import Download
 import os
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from dash.exceptions import PreventUpdate
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import math
 import io
 import base64
+import plotly.figure_factory as ff
+import plotly.express as px
+from itertools import groupby
+
 
 NUMBER_OF_GENES_IN_VIOLIN_PLOT = 5
 
-df = pd.read_csv(str(pathlib.Path("Preterm Birth Gene Data/GSE134896_FSKrepExpTable.csv")))
+df = pd.read_csv(str(pathlib.Path("Gene_Expression_Data/GSE134896_FSKrepExpTable.csv")))
 
 
+
+cluster_dict_three = {
+    '3':[
+    [[19, 20, 21], [19, 20, 21], [9, 10, 11], [13, 14, 15], [29, 30, 31], [25, 26, 27], [19, 20, 21], [19, 20, 21]],
+    [[13, 13, 13], [40, 40, 40], [20, 20, 20],[30, 30, 30] ,[20, 20, 20], [30, 30, 30], [20, 20, 20], [30, 30, 30]] ],
+    '2':[
+    [[19, 20, 21], [13,14,15], [25, 26, 27], [19, 20, 21]],
+    [[20, 20, 20], [30,30,30], [30,30,30],   [30, 30, 30]]
+    ],
+    '1':[
+    [[19, 20, 21], [19, 20, 21]],
+    [[20, 20, 20], [30, 30, 30]]
+    ],
+}
 def load_t_test_cache():
     file_dir = pathlib.Path('Preterm Birth Gene Data/t_test_cache/')
     all_files = os.listdir(file_dir)
@@ -40,7 +60,7 @@ row_labels = list(df['Gene_Name'])
 row_labels_arr = np.array(row_labels)
 row_dict = { row_labels[i] : i for i in range(0, len(row_labels) ) }
 
-
+df_with_names = df
 df = df.drop('Gene_Name', 1)
 df_row_means = df.mean(axis=1)
 df_row_stds = df.std(axis=1)
@@ -66,6 +86,7 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.GRID])
 app.config['suppress_callback_exceptions'] = True
 server = app.server
 
+tran_df = df.T
 
 heatmap_Data = go.Heatmap(
         z=df,
@@ -189,10 +210,25 @@ update_button = html.Button(
         'Update', 
         id='update_button',
     )
-violin_graph = dcc.Graph(
-        id='violin_plot',
+violin_graph1 = dcc.Graph(
+        id='violin_plot1',
         figure=fig_scatter
     )
+violin_graph2 = dcc.Graph(
+        id='violin_plot2',
+        figure=fig_scatter
+    )
+
+violin_graph3 = dcc.Graph(
+        id='violin_plot3',
+        figure=fig_scatter
+    )
+
+violin_graph4 = dcc.Graph(
+        id='violin_plot4',
+        figure=fig_scatter
+    )
+
 x_group_id = html.Label(
         children = [html.Br(), 'Current X group'],
         id = 'x_group_id',
@@ -210,7 +246,7 @@ y_group_id = html.Label(
         }
     )
 single_gene_selection_label = html.Label(
-        children = 'Gene or Individual Comparison',
+        children = 'Gene Focused or Condition Focused Comparison',
         style={
             'textAlign': 'left',
             'color': colors['text'],
@@ -224,12 +260,12 @@ single_gene_drop_graph = dcc.Dropdown(
     )
 indivdual_or_gene_drop = dcc.Dropdown(
         id='invidual_or_gene_dd',
-        options=[{'label': i, 'value': i} for i in ['Gene', 'Individual']],
-        value='Individual',
+        options=[{'label': i, 'value': i} for i in ['Gene Focused', 'Condition Focused']],
+        value='Condition Focused',
         multi=False,
     )
 number_of_genes_label = html.Label(
-        children = 'Number of Genes Violin Plot Displays',
+        children = 'Bottom Right Display as Scatter Plot or Histogram',
         style={
             'textAlign': 'left',
             'color': colors['text'],
@@ -237,8 +273,8 @@ number_of_genes_label = html.Label(
     )
 number_of_violin_genes = dcc.Dropdown(
         id='violin_gene_number',
-        options=[{'label': i, 'value': i} for i in range(1, 11)],
-        value=5,
+        options=[{'label': i, 'value': i} for i in ['Histogram', 'Scatter Plot']],
+        value='Scatter Plot',
         multi=False,
     )
 genes_look_label = html.Label(
@@ -279,7 +315,7 @@ var_filter = html.Div(
         )
     ]
 )
-
+download_heat_button = html.Div([html.Button("Download csv", id="btn"), Download(id="download")])
 
 fold_filter = html.Div(
     [
@@ -305,6 +341,8 @@ body_1 = dbc.Container(
                             dcc.Store(id='main_data'),
                             dcc.Store(id='temp_data'),
                             dcc.Store(id='input_data'),
+                            dcc.Store(id='default_data'),
+
                             top_title
                         ]
                     )
@@ -343,15 +381,16 @@ body_1 = dbc.Container(
                             update_button,
                             x_group_id,
                             y_group_id,
+                            download_heat_button,
                         ],
                         width = 4
                     ),
                     dbc.Col(
                         [
-                            violin_graph,
+                            violin_graph1,
                         ], 
                         width = 8
-                    )
+                    ),
                 ]
             )
         ],
@@ -423,7 +462,227 @@ variable_dropdowns = html.Div(id='variable_dropdowns')
 variable_inputs = html.Div(id='variable_inputs')
 gene_column_select_label = html.Div(id='gene_column_select_label')
 gene_column_select = html.Div(id='gene_column_select')
+image_filename = 'study_img1.jpg' # replace with your own image
+encoded_image = base64.b64encode(open(image_filename, 'rb').read())
 
+loop_dict = {
+    '1':2,
+    '2':4,
+    '3':8
+    }
+cluster_drop_label = html.Label(
+        children = 'Select Gene',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+cluster_drop_graph = dcc.Dropdown(
+        id='cluster_selection_dd',
+        options=[{'label': i, 'value': i} for i in row_labels],
+        value=row_labels[0],
+        multi=False
+    )
+input_combo_label  = html.Label(
+        children = 'Input number of combinations in dataset',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+control_label  = html.Label(
+        children = 'Control Group',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_1_label  = html.Label(
+        children = 'Condition 1',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_2_label  = html.Label(
+        children = 'Condition 2',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_3_label  = html.Label(
+        children = 'Condition 3',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_1_2_label  = html.Label(
+        children = 'Condition 1 and Condition 2',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_1_3_label  = html.Label(
+        children = 'Condition 1 and Condition 3',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_2_3_label  = html.Label(
+        children = 'Condition 2 and Condition 3',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+condition_1_2_3_label  = html.Label(
+        children = 'Condition 1, Condition 2, and Condition 3',
+        style={
+            'textAlign': 'left',
+            'color': colors['text'],
+        }
+    )
+input_combo =  dcc.Input(
+            id='combo_number',
+            type='number',
+            value=3,
+            min=1,
+            max=1000
+        )
+
+input_combo_1 = dcc.Dropdown(
+        id='input_combo_1',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+
+input_combo_2 = dcc.Dropdown(
+        id='input_combo_2',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_3 = dcc.Dropdown(
+        id='input_combo_3',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_4 = dcc.Dropdown(
+        id='input_combo_4',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_5 = dcc.Dropdown(
+        id='input_combo_5',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_6 = dcc.Dropdown(
+        id='input_combo_6',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_7 = dcc.Dropdown(
+        id='input_combo_7',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+input_combo_8 = dcc.Dropdown(
+        id='input_combo_8',
+        options=gene_drop_down_options,
+        value="CONTROL",
+        multi=False,
+        #disabled=True,
+    )
+update_button_cluster = html.Button(
+        'Update', 
+        id='update_button_cluster',
+    )
+clusters = dcc.Graph(
+        id='cluster',
+        figure=fig_scatter
+    )
+body_3 = dbc.Container(
+        [   
+                dbc.Row(
+                    [
+                    dbc.Col(
+                        [
+                            cluster_drop_label,
+                            cluster_drop_graph,
+                            dcc.Store(id='cluster_info'),
+                            dcc.Store(id='temp_cluster_info')
+                            
+                        ]
+                    ),
+                ]
+            ),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                            [
+                                clusters
+                            ]
+                    )
+                ]
+            ),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                            [
+                                input_combo_label,
+                                html.Br(),
+                                input_combo,
+                                html.Br(),
+                                control_label,
+                                input_combo_1,
+                                condition_1_label,
+                                input_combo_2,
+                                condition_2_label,
+                                input_combo_3,
+                                condition_1_2_label,
+                                input_combo_4,
+                                condition_3_label,
+                                input_combo_5,
+                                condition_1_3_label,
+                                input_combo_6,
+                                condition_2_3_label,
+                                input_combo_7,
+                                condition_1_2_3_label,
+                                input_combo_8,
+                                update_button_cluster,
+                            ]
+                    )
+                ]
+            ),
+                    #dbc.Row(
+                    #    [
+                    #        dbc.Col(
+                    #        [
+                    #            html.Div(html.Img(src=app.get_asset_url('study_img1.jpg')))
+                    #        ]
+                   # )
+                #]
+            #)
+        ]
+    )
 body_2 = dbc.Container(
         [
             dbc.Row(
@@ -494,10 +753,14 @@ body_2 = dbc.Container(
         ])    
 first_tab = html.Div([body_1])
 second_tab = html.Div([body_2])
+third_tab = html.Div([body_3])
 app.layout = html.Div([
     dcc.Tabs([
-        dcc.Tab(label='Visuals', children=[
+        dcc.Tab(label='Specific Visuals', children=[
             first_tab
+        ]),
+        dcc.Tab(label='Clusters', children=[
+            third_tab
         ]),
         dcc.Tab(label='Custom Data', children=[
             second_tab
@@ -534,23 +797,30 @@ app.layout = html.Div([
             State('name_memory', 'data'),
             State('scatter_plot_memory', 'data'),
             State('fold_filter', 'value'),
-            State('var_filter', 'value')
+            State('var_filter', 'value'),
+            State('default_data', 'data'),
 
         ]
 )
-def update_button(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, individ_or_gene_dd, violin_gene_number, combination_dd_value, name_memory, scatter_mem, fold_filter, var_filter):
+def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, individ_or_gene_dd, violin_gene_number, combination_dd_value, name_memory, scatter_mem, fold_filter, var_filter, default_data):
     '''
         This callback takes all the dropdown menus and will calculate the differentially expressed genes and update the memory objects
     '''
+    print("CALLED")
     if(1==1):
         if(x_dd_value is None or y_dd_value is None):
+            print("first one")
             raise PreventUpdate
         x_num = len(x_dd_value)
         y_num = len(y_dd_value)
 
-        if(x_num == 0 or y_num == 0 or main_data is None):
+        if(x_num == 0 or y_num == 0):
+            print("second one")
             raise PreventUpdate
-
+        if(default_data is None):
+            defualt_data = load_default_data(1,1)
+        if(main_data is None):
+            main_data = defualt_data
         x_dd_value = combine_columns(x_dd_value, main_data)
         y_dd_value = combine_columns(y_dd_value, main_data)
         x_num = len(x_dd_value)
@@ -577,7 +847,7 @@ def update_button(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, i
         x_dff = main_df.loc[:, x_dd_value]
         y_dff = main_df.loc[:, y_dd_value]
         print('preprocessing done')
-        if(individ_or_gene_dd == 'Individual'):
+        if(individ_or_gene_dd == 'Condition Focused'):
 
             if(name_memory is not None and x_dd_value == name_memory['x_dd'] and y_dd_value == name_memory['y_dd']
                 and combination_dd_value == name_memory['combo'] and individ_or_gene_dd == name_memory['type']
@@ -588,12 +858,12 @@ def update_button(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, i
 
             else:
                 print('this should happen')
-                gene_diff_df = find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data)
+                gene_diff_df = find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data, True)
                 print('this happened')
 
         else:
 
-            gene_diff_df = None
+            gene_diff_df = find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data)
         
         heat_dict = create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, individ_or_gene_dd, main_data)
 
@@ -619,6 +889,14 @@ def update_button(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, i
             Output('x_axis_selection_dd', 'options'),
             Output('y_axis_selection_dd', 'options'),
             Output('gene_select_dd', 'options'),
+            Output('input_combo_1', 'options'),
+            Output('input_combo_2', 'options'),
+            Output('input_combo_3', 'options'),
+            Output('input_combo_4', 'options'),
+            Output('input_combo_5', 'options'),
+            Output('input_combo_6', 'options'),
+            Output('input_combo_7', 'options'),
+            Output('input_combo_8', 'options'),
         ],
         [
             Input('temp_data', 'data'),
@@ -629,6 +907,7 @@ def update_button(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_dd, i
         
 )
 def update_main_memory(temp_data, n_clicks):
+    print("IS THIS HAPPENING??????????????????????????")
     if(n_clicks is None):
         n_clicks = 0
     if(temp_data is None):
@@ -636,7 +915,7 @@ def update_main_memory(temp_data, n_clicks):
     else:
         main_data = temp_data
 
-    return main_data, n_clicks+1, main_data['gene_drop_down_options'], main_data['gene_drop_down_options'], main_data['single_gene_options']
+    return main_data, n_clicks+1, main_data['gene_drop_down_options'], main_data['gene_drop_down_options'], main_data['single_gene_options'], main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options']
 
 @app.callback(
         
@@ -670,10 +949,24 @@ def update_heatmap(memory, selected_data):
             y=current_row_labels, 
             hoverinfo='text',
             text=get_hover_text(name_adj_heat_df, current_row_labels),
-            colorscale='RdBu',
+            colorscale='RdBu_r',
             zmax=max(max_val + 0.2, 0.5),
             zmin= min(min_val - 0.2, -0.5),
         )
+    '''
+    [
+                [0.0, "rgb(49,54,149)"],
+                [0.1111111111111111, "rgb(69,117,180)"],
+                [0.2222222222222222, "rgb(116,173,209)"],
+                [0.3333333333333333, "rgb(171,217,233)"],
+                [0.4444444444444444, "rgb(224,243,248)"],
+                [0.5555555555555556, "rgb(254,224,144)"],
+                [0.6666666666666666, "rgb(253,174,97)"],
+                [0.7777777777777778, "rgb(244,109,67)"],
+                [0.8888888888888888, "rgb(215,48,39)"],
+                [1.0, "rgb(165,0,38)"]
+                ]
+    '''
     layout_heatmap = go.Layout(
             title={
                 'text': "Heatmap",
@@ -695,6 +988,286 @@ def update_heatmap(memory, selected_data):
 
     return fig_heatmap
 
+one_combo = {
+    'x':[0],
+    'y':[0],
+    'show':0
+}
+two_combo = {
+    'x':[-1, 0],
+    'y':[0, 0],
+    'show': 1
+}
+three_combo = {
+    'x':[-1, 0, 1],
+    'y':[0, 0, 0],
+    'show': 1
+}
+four_combo = {
+    'x':[-1, 0, 1, -1],
+    'y':[0, 0, 0, -1],
+    'show': 1
+}
+five_combo = {
+    'x':[-1, 0, 1, -1, 0],
+    'y':[0, 0, 0, -1, -1],
+    'show': 1
+}
+six_combo = {
+    'x':[-1, 0, 1, -1, 0, 1],
+    'y':[0, 0, 0, -1, -1, -1],
+    'show': 1
+}
+combo_locs = {
+    "1":one_combo,
+    "2":two_combo,
+    "3":three_combo,
+    "4":four_combo,
+    "5":five_combo,
+    "6":six_combo,
+}
+def arrange_cluster_points(x_location_center, y_location_center, combo_group, start_num):
+    combo_length = len(combo_group)
+    combo_dict = combo_locs[str(combo_length)]
+    x = list(map(lambda x : x + x_location_center, combo_dict['x']))
+    y = list(map(lambda x : x + y_location_center, combo_dict['y']))
+    show_val = combo_dict['show'] + start_num
+    return x, y, show_val
+@app.callback(
+            Output('cluster_info', 'data'),
+        [
+            Input('update_button_cluster', 'n_clicks')
+        ],
+        [
+            State('main_data', 'data'),
+            State('input_combo_1', 'value'),
+            State('input_combo_2', 'value'),
+            State('input_combo_3', 'value'),
+            State('input_combo_4', 'value'),
+            State('input_combo_5', 'value'),
+            State('input_combo_6', 'value'),
+            State('input_combo_7', 'value'),
+            State('input_combo_8', 'value'),
+            State('combo_number', 'value'),
+
+        ]
+)
+def update_cluster_button(n_clicks, main_data, input_combo_1, input_combo_2,input_combo_3, input_combo_4, input_combo_5, input_combo_6, input_combo_7, input_combo_8, input_combo):
+
+    print("AHHHHHHHHHHHHH")
+
+    if(n_clicks == 0 or main_data is None):
+        raise PreventUpdate
+    if(not ((input_combo == 1 and input_combo_1 is not None and input_combo_2 is not None) or
+       (input_combo == 2 and input_combo_1 is not None and input_combo_2 is not None and input_combo_3 is not None and input_combo_4 is not None) or
+       (input_combo == 3 and input_combo_1 is not None and input_combo_2 is not None and input_combo_3 is not None and input_combo_4 is not None and input_combo_5 is not None and input_combo_6 is not None and input_combo_7 is not None and input_combo_8 is not None))):
+        raise PreventUpdate
+
+    input_combo_1 = combine_columns(input_combo_1.split(), main_data)
+    input_combo_2 = combine_columns(input_combo_2.split(), main_data)
+    input_combo_3 = combine_columns(input_combo_3.split(), main_data)
+    input_combo_4 = combine_columns(input_combo_4.split(), main_data)
+    input_combo_5 = combine_columns(input_combo_5.split(), main_data)
+    input_combo_6 = combine_columns(input_combo_6.split(), main_data)
+    input_combo_7 = combine_columns(input_combo_7.split(), main_data)
+    input_combo_8 = combine_columns(input_combo_8.split(), main_data)
+    x_locs = []
+    y_locs = []
+    single_row_names = []
+    x_location_template = cluster_dict_three[str(input_combo)][0]
+    y_location_template = cluster_dict_three[str(input_combo)][1]
+
+    loop_num = loop_dict[str(input_combo)]
+    input_combos = [input_combo_1, input_combo_2, input_combo_3, input_combo_4, input_combo_5, input_combo_6, input_combo_7, input_combo_8]
+    orientation = ['middle left', 'top center', 'middle right'] * (loop_num)
+    final_pos = []
+    show_text = []
+    total_num = 0
+    for i in range(loop_num):
+        current_combo = input_combos[i]
+        x, y, show_val = arrange_cluster_points(x_location_template[i][1], y_location_template[i][1], current_combo, total_num)
+        x_locs.extend(x)
+        y_locs.extend(y)
+        single_row_names.extend(current_combo)
+        final_pos.extend(orientation[:len(current_combo)])
+        show_text.append(show_val)
+
+        total_num = total_num + len(current_combo)
+
+    print("finished updating cluster data")
+    print(orientation)
+
+    return {'single_row_names':single_row_names, 'x_locs':x_locs, 
+            'y_locs':y_locs, 'orientation':orientation, 'show_text': show_text}
+
+
+
+
+@app.callback(
+        
+            Output(component_id='cluster', component_property='figure'),
+
+        [
+            Input('cluster_selection_dd', 'value'),
+            Input('cluster_info', 'data'),
+
+        ]
+)
+def update_cluster(cluster_dd, cluster_data):
+    '''
+        This callback uses the scatter plot memory store and any selected data in the heatmap to update the scatter plot
+    '''
+    print("we doing something")
+    if(cluster_data is None):
+        print("right here?")
+        single_row = df_with_names[df_with_names['Gene_Name'] == cluster_dd]
+        print(single_row)
+        all_columns = df.columns
+        layout = go.Layout(
+        title = 'Clusters',
+        xaxis = go.layout.XAxis(
+            title = '',
+             tickmode = 'array',
+             tickvals = [''],
+             ticktext =[''],
+             tickfont = go.Font(
+                 color = 'rgb(255, 255, 255)'
+             )
+        ),
+        yaxis = go.layout.YAxis(
+            title = '',
+             tickmode = 'array',
+             tickvals = [''],
+             ticktext =[''],
+             tickfont = go.Font(
+                 color = 'rgb(255, 255, 255)'
+             )
+        ),
+        height=700,
+        xaxis_showgrid=False, yaxis_showgrid=False
+        )
+        x = [9, 10, 11, 9, 10, 11, -1, 0, 1, 19, 20, 21, 15, 16, 17, 3, 4, 5, 9, 10, 11, 9, 10, 11]
+        y = [-7, -7, -7, 20, 20, 20, 0,0,0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 0, 0, 0, 10, 10, 10]
+        x = list(map(lambda x : x + 10, x))
+        y = list(map(lambda x : x + 20, y))
+        markers = []
+        hover_text = []
+        single_row_list = list(single_row)
+        modes = []
+        all_vals = []
+        for column in single_row.columns:
+            entries = list(single_row[column])
+            if(column != 'Gene_Name' and len(entries) > 0):
+                #print(single_row[column])
+                #print(single_row[column][0])
+                
+                all_vals.append(entries[0])
+        counter = 0
+        for column in single_row.columns:
+            entries = list(single_row[column])
+            if(column != 'Gene_Name' and len(entries) > 0):
+                #markers.append(f'rgba(60,179,113,{normalize_gene(entries[0] + 0.01)})')#, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)})')
+                markers.append(f'rgba(60,179,113,{max([0.01,min([1, normalize_gene(entries[0] + 0.01, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)])])})')
+                hover_text.append(f"{column}<br>{round(entries[0], 1)}")
+                if(counter == 1):
+                    modes.append(f"{column[:-2]}")
+                else:
+                    modes.append(f"")
+                
+                counter = counter + 1
+                if(counter == 3):
+                    counter = 0
+        print(markers)
+        fig = go.Figure(go.Scatter(x =x, y=y, mode='markers+text', 
+                                   text=modes,
+                                 marker_size=25,
+                                textposition= ['middle left', 'top center', 'middle right', 
+                                               'middle left', 'bottom center', 'middle right', 
+                                               'middle left', 'top center', 'middle right', 
+                                               'middle left', 'top center', 'middle right', 
+                                               'middle left', 'top center', 'middle right', 
+                                               'middle left', 'top center', 'middle right', 
+                                               'middle left', 'top center', 'middle right', 
+                                               'bottom left', 'top center', 'bottom right'],
+                                hovertext=hover_text,
+                                marker_color=markers), layout=layout)
+        print("FINISHED")
+    else:
+        print("starting updating figure")
+        print(cluster_dd)
+        single_row = df_with_names[df_with_names['Gene_Name'] == cluster_dd]
+        print(single_row)
+        print("bah")
+        print(cluster_data['single_row_names'])
+        all_columns = df.columns
+        layout = go.Layout(
+        title = 'Clusters',
+        xaxis = go.layout.XAxis(
+            title = '',
+             tickmode = 'array',
+             tickvals = [''],
+             ticktext =[''],
+             tickfont = go.Font(
+                 color = 'rgb(255, 255, 255)'
+             )
+        ),
+        yaxis = go.layout.YAxis(
+            title = '',
+             tickmode = 'array',
+             tickvals = [''],
+             ticktext =[''],
+             tickfont = go.Font(
+                 color = 'rgb(255, 255, 255)'
+             )
+        ),
+        height=700,
+        xaxis_showgrid=False, yaxis_showgrid=False
+        )
+        markers = []
+        hover_text = []
+        single_row_list = list(single_row)
+        modes = []
+        all_vals = []
+        print("COLUMN PRINT")
+        for column in cluster_data['single_row_names']:
+            print(column)
+            entries = list(single_row[column])
+            if(column != 'Gene_Name' and len(entries) > 0):
+                #print(single_row[column])
+                #print(single_row[column][0])
+                
+                all_vals.append(entries[0])
+        counter = 0
+        for column in cluster_data['single_row_names']:
+            entries = list(single_row[column])
+            if(column != 'Gene_Name' and len(entries) > 0):
+                print(counter)
+                print(counter in cluster_data['show_text'])
+                #markers.append(f'rgba(60,179,113,{normalize_gene(entries[0] + 0.01)})')#, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)})')
+                markers.append(f'rgba(60,179,113,{max([0.01,min([1, normalize_gene(entries[0] + 0.01, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)])])})')
+                hover_text.append(f"{column}<br>{round(entries[0], 1)}")
+                if(counter in cluster_data['show_text']):
+                    modes.append(f"{column[:-2]}")
+                else:
+                    modes.append(f"")
+                
+                counter = counter + 1
+
+        print(markers)
+        print(cluster_data['show_text'])
+        print(cluster_data['x_locs'])
+        print(cluster_data['y_locs'])
+        print(modes)
+        fig = go.Figure(go.Scatter(x =cluster_data['x_locs'], y=cluster_data['y_locs'], mode='markers+text', 
+                                   text=modes,
+                                 marker_size=25,
+                                textposition= cluster_data['orientation'],
+                                hovertext=hover_text,
+                                marker_color=markers), layout=layout)
+        print("FINISHED")
+
+    return fig
+
 
 @app.callback(
 
@@ -703,8 +1276,11 @@ def update_heatmap(memory, selected_data):
         [
             Input('scatter_plot_memory', 'data'),
         ],
+        [
+            State('main_data', 'data'),
+        ]
 )
-def update_scatter(memory):
+def update_scatter(memory, main_data):
     '''
         This callback uses the scatter plot memory store and any selected data in the heatmap to update the scatter plot
     '''
@@ -721,13 +1297,14 @@ def update_scatter(memory):
 
     else:
         stored_mem3 = memory['names']
-        scatter_figure = create_pca_scatter(stored_mem1, memory['selected_indices'], stored_mem3[0], stored_mem3[1])
+        scatter_figure = create_gene_based_scatter(pd.DataFrame(stored_mem1), memory['selected_indices'], stored_mem3[0], stored_mem3[1], main_data)
 
     return scatter_figure
 
 @app.callback(
 
-            Output(component_id='violin_plot', component_property='figure'),
+        Output(component_id='violin_plot1', component_property='figure'),
+
 
         [
             Input("scatter_plot", "selectedData"),
@@ -749,8 +1326,6 @@ def update_violin(scatter_selected_data, memory, violin_gene_number, name_memory
         raise PreventUpdate
 
     main_df = pd.DataFrame((main_data['main_df']))
-    print(pd.DataFrame((main_data['main_df'])).columns)
-    print(memory['x_dd'])
 
     current_row_labels = memory['current_row_labels']
 
@@ -767,7 +1342,7 @@ def update_violin(scatter_selected_data, memory, violin_gene_number, name_memory
         current_row_labels = all_genes + non_heat_genes
 
 
-    current_row_labels = current_row_labels[:violin_gene_number]
+    current_row_labels = current_row_labels[:10]
 
     violin_figure = update_violin_plot(current_row_labels, name_memory['x_dd'], name_memory['y_dd'], violin_gene_number, main_df, main_data['row_dict'])
 
@@ -788,14 +1363,10 @@ def update_violin(scatter_selected_data, memory, violin_gene_number, name_memory
                 State('upload-data', 'last_modified')
             ])
 def create_upload_display(contents, filename, last_modified):
-    print('AHHHHHHHHH')
-    #print(contents)
-    print(contents is None)
     if(contents is None):
         raise PreventUpdate
 
     if(1==1):
-        print('made it here')
         content_type, content_string = contents[0].split(',')
         decoded = base64.b64decode(content_string)
         input_df = pd.read_csv(
@@ -803,15 +1374,12 @@ def create_upload_display(contents, filename, last_modified):
         return_msg = html.Div([
             f'{filename[0]} successfully uploaded'
         ])
-        print('up to this functions')
         return_mem = create_new_data(input_df)
-        print('and past it')
     else:# Exception as e:
         return_msg = html.Div([
             'There was an error processing this file.'
         ])
         return_mem = None
-    print('made it through this')
 
     return return_mem, return_msg
 
@@ -892,6 +1460,7 @@ def update_div(number_groups, input_data):
 )
 def update_input_memory(n_clicks, input_data, dropdowns, input_names):
     if(input_data is None):
+        return [load_default_data(1,1)]
         raise PreventUpdate
 
     gene_drop_down_options_hold = []
@@ -899,34 +1468,60 @@ def update_input_memory(n_clicks, input_data, dropdowns, input_names):
     for name, dd in zip(input_names, dropdowns):
 
         if(name['props'].get('value') is not None and dd['props'].get('value') is not None):
-            print('we adding')
             gene_drop_down_options_hold.append({'label': name['props']['value'], 'value' : ' '.join(list(dd['props']['value']))})
             default_groups_hold[name['props']['value']] = [dd['props']['value']]
     #gene_drop_down_options_hold = [{'label': name['value'], 'value' : ' '.join(list(dd['value']))} for name, dd in zip(input_names, dropdowns)]
     #default_groups_hold = {name['value'] : [dd['value']] for name, dd in zip(input_names, dropdowns)}
-    print(gene_drop_down_options_hold)
     input_data['gene_drop_down_options'] = gene_drop_down_options_hold + input_data['gene_drop_down_options']
     input_data['default_groups'] = default_groups_hold
     
     return [input_data]
 
-        
+@app.callback(
+        Output("download", "data"),
+        [
+            Input("btn", "n_clicks"),
+        ],
+        [
+            State('heatmap_memory', 'data'),
+        ]
+)
+def generate_csv(n_nlicks, data):
+    if(data is None):
+        raise PreventUpdate
+    # Convert data to a string.
+    s = io.StringIO()
+    d_df = pd.DataFrame(data['original'])
+    d_df['Gene_Name'] = data['current_row_labels']
+    rename_dict = {}
+    for val in d_df.columns:
+        if(val.endswith('_X') or val.endswith('_Y')):
+            rename_dict[val] = val[:len(val)-2]
+    print(rename_dict)
+    d_df = d_df.rename(rename_dict, axis=1)
+    column_names_download = list(d_df.columns)
+
+    d_df = d_df[['Gene_Name'] + list(column_names_download[:len(column_names_download) - 1])]
+    d_df.to_csv(s, index=False)
+    content = s.getvalue()
+    # The output must follow this form for the download to work.
+    return dict(filename="Heatmap_data.csv", content=content, type="text/csv")    
+
+
+
+   
 
 #Helper Functions
 
 def filter_by_var_fold(main_data, x_dd_value, y_dd_value, fold_filter, var_filter):
-
-    print(fold_filter)
-    print(var_filter)
-
     x_y_cols = list(set(x_dd_value + y_dd_value))
     main_df = pd.DataFrame(main_data['main_df'])
     new_row_labels = np.array(main_data['row_labels'])
 
-    print('starting')
+
     x_dff = main_df.loc[:, x_dd_value]
     y_dff = main_df.loc[:, y_dd_value]
-    print('quarter')
+
 
     var_df = pd.concat([x_dff.reset_index(drop=True), y_dff.reset_index(drop=True)], axis=1)
     var_filter = var_df.var(axis=1) > var_filter 
@@ -936,20 +1531,20 @@ def filter_by_var_fold(main_data, x_dd_value, y_dd_value, fold_filter, var_filte
     y_dff = main_df.loc[:, y_dd_value]
     
     new_row_labels = new_row_labels[var_filter]
-    print('half way')
+
     x_mean = np.array(x_dff.mean(axis=1))
     y_mean = np.array(y_dff.mean(axis=1))
     x_mean_log = np.log2(x_mean)
     y_mean_log = np.log2(y_mean)
 
     fold_change = y_mean_log - x_mean_log
-    print(fold_change)
+
     final_fold_filter = np.greater(fold_change, fold_filter) | np.less(fold_change, -fold_filter)
 
     main_df = main_df[final_fold_filter]
     new_row_labels = new_row_labels[final_fold_filter]
     main_df = main_df.reset_index()
-    print('we did it!')
+
     return load_default_data(fold_filter, var_filter, data = main_df,  row_labels_hold = new_row_labels)
 
 def add_default_groups():
@@ -968,21 +1563,18 @@ def create_new_data(input_df):
     '''
     Create new data object
     '''
-    print('just beginning function')
     df_hold = input_df
     gene_name_col = list(df_hold.columns)[0]
     
     row_labels_hold = df_hold.loc[:, gene_name_col]
     row_labels_arr_hold = np.array(row_labels_hold)
     row_dict_hold = { row_labels_hold[i] : i for i in range(0, len(row_labels_hold) ) }
-    print('quarter way thru')
     if(gene_name_col in df_hold.columns):
         df_hold = df_hold.drop(gene_name_col, 1)
     df_row_means_hold = df_hold.mean(axis=1)
     df_row_stds_hold = df_hold.std(axis=1)
     df_row_vars_hold = df_hold.var(axis=1)
 
-    print('halfway thru function')
     default_options_hold = []
     column_options_hold = [{'label': i, 'value': i} for i in df_hold.columns]
     gene_drop_down_options_hold = default_options_hold + column_options_hold
@@ -1010,7 +1602,7 @@ def load_default_data(fold_filter, var_filter, data = None, row_labels_hold = No
     Load defualt data objects
     '''
     if(data is None):
-        df_hold = pd.read_csv(str(pathlib.Path("Preterm Birth Gene Data/GSE134896_FSKrepExpTable.csv")))
+        df_hold = pd.read_csv(str(pathlib.Path("Gene_Expression_Data/GSE134896_FSKrepExpTable.csv")))
         row_labels_hold = list(df_hold['Gene_Name'])
     else:
         df_hold = data
@@ -1055,6 +1647,7 @@ def load_default_data(fold_filter, var_filter, data = None, row_labels_hold = No
     'single_gene_options':single_gene_options_hold,
     'fold_filter':fold_filter,
     'var_filter':var_filter,
+    'original_data':True,
     }
     return return_mem
 
@@ -1085,7 +1678,13 @@ def combine_columns(column_selection, main_data):
     final_cols.sort()
     return final_cols
 
-def find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data):
+def normalize_gene(value, min_value = -2.0, max_value = 4.81852346, log_transform = True):
+    if(log_transform):
+        value = math.log10(value)
+
+    return (value - min_value)/(max_value - min_value)
+
+def find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data, quick_method = False):
     main_df = pd.DataFrame(main_data['main_df'])
     if(combination_dd_value == 'mean'):
         x_combo = np.array(x_dff.mean(axis=1))
@@ -1093,19 +1692,14 @@ def find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main
     else:
         x_combo = np.array(x_dff.median(axis=1))
         y_combo = np.array(y_dff.median(axis=1))
-    if(len(x_dff.columns) == 1 or len(y_dff.columns) == 1):
+    if(len(x_dff.columns) == 1 or len(y_dff.columns) == 1 or quick_method):
         difference_measure = np.subtract(x_combo, y_combo)
         absolute_difference_measure = np.absolute(difference_measure)
     else:
         difference_measure = np.array(main_df.apply(row_t_test, args = [x_dff.columns, y_dff.columns], axis = 1))
         absolute_difference_measure = np.absolute(difference_measure)
 
-    print(len(difference_measure))
-    print(len(absolute_difference_measure))
-    print(len(main_data['df_row_means']))
-    print(len(x_combo))
-    print(len(main_data['df_row_stds']))
-    print(len(main_data['row_labels']))
+
     gene_diff_df = pd.DataFrame({
         'original_index': range(0, len(difference_measure)),
         'difference measure' : difference_measure,
@@ -1140,12 +1734,16 @@ def create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
     '''
     main_df = pd.DataFrame(main_data['main_df'])
     new_row_labels = main_data['row_labels']
-    if(gene_diff_df is None):
+    new_row_dict = main_data['row_dict']
+    if(individ_or_gene_dd == 'Gene Focused'):
         if(type(gene_select_dd) == str):
             gene_select_dd = [gene_select_dd]
         gene_select_indices = []
         for val in gene_select_dd:
-            gene_select_indices.append(row_dict[val])
+            try:
+                gene_select_indices.append(new_row_dict[val])
+            except:
+                pass
         heat_df = main_df.iloc[main_df.index.isin(gene_select_indices)]
 
     else:
@@ -1187,7 +1785,9 @@ def create_scatter_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
     '''
     Creates a dictionary that will be used to create the scatter plot memory object
     '''
-    if(individ_or_gene_dd == 'Individual'):
+    main_df = pd.DataFrame(main_data['main_df'])
+    new_row_dict = main_data['row_dict']
+    if(individ_or_gene_dd == 'Condition Focused'):
         scatter_dict = {
         'df1' : gene_diff_df.to_dict('list'),
         'df2' : [x_dd_value, y_dd_value],
@@ -1197,29 +1797,18 @@ def create_scatter_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
             gene_select_dd = [gene_select_dd]
 
 
-        pca = PCA(n_components=2)
-        principal_components = pca.fit_transform(df[x_dd_value + y_dd_value])
-        principal_df = pd.DataFrame(data = principal_components,
-        columns = ['principal component 1', 'principal component 2'])
-
-        
-        '''
-
-        if(len(y_dd_value) == 1):
-            principal_df_y = df[y_dd_value]
-            principal_df_y.columns = ['principal component 1']
-        else:
-            pca_y = PCA(n_components=2)
-            principal_components_y = pca_y.fit_transform(df[y_dd_value])
-            principal_df_y = pd.DataFrame(data = principal_components_y
-                     , columns = ['principal component 1', 'principal component 2'])
-        '''
+        selected_indices_hold = []
+        for val in gene_select_dd:
+            try:
+                selected_indices_hold.append(new_row_dict[val])
+            except:
+                pass
 
 
         scatter_dict = {
-            'df1' : principal_df.to_dict('list'),
+            'df1' : gene_diff_df.to_dict('list'),
             'names' : [x_dd_value, y_dd_value],
-            'selected_indices':[row_dict[i] for i in gene_select_dd]
+            'selected_indices':selected_indices_hold
         }
 
     
@@ -1343,33 +1932,36 @@ def create_scatter_diff_genes(gene_diff_df, x_dd_value, y_dd_value):
         )
     return updated_scatter
 
-def create_pca_scatter(principal_df, selected_indices, x_dd_value, y_dd_value):
+def create_gene_based_scatter(gene_diff_df, selected_indices, x_dd_value, y_dd_value, main_data):
     '''
-    Creates the scatter plot based on the PCA data
+    Creates the scatter plot based upon the differentially expressed genes
     '''
+    new_row_dict = main_data['row_dict']
+
+
+
+    final_x_values = list(gene_diff_df['x_vals'])
+    final_y_values = list(gene_diff_df['y_vals'])
+    final_names = list(gene_diff_df['gene name'])
+    top_x_values = []
+    top_y_values = []
+    top_row_labels = []
+    bottom_x_values= []
+    bottom_y_values=  []
+    bottom_row_labels = []
+
+    for i, name in enumerate(final_names):
+        if(new_row_dict[name] in selected_indices):
+            top_x_values.append(final_x_values[i])
+            top_y_values.append(final_y_values[i])
+            top_row_labels.append(final_names[i])
+        else:
+            bottom_x_values.append(final_x_values[i])
+            bottom_y_values.append(final_y_values[i])
+            bottom_row_labels.append(final_names[i])
+
 
     updated_scatter = go.Figure()
-
-    selected_indices = np.array(selected_indices)
-
-    x_values = np.array(principal_df['principal component 1'])
-    y_values = np.array(principal_df['principal component 2'])
-
-    x_adj = abs(min(min(x_values), 0))
-    y_adj = abs(min(min(y_values), 0))
-
-    x_values = x_values + x_adj
-    y_values = y_values + y_adj
-
-    top_x_values = x_values[selected_indices]
-    top_y_values = y_values[selected_indices]
-    top_row_labels = row_labels_arr[selected_indices.astype(int)]
-
-    unselected_indices = np.delete(range(0,len(x_values)), selected_indices)
-    bottom_x_values = x_values[unselected_indices]
-    bottom_y_values = y_values[unselected_indices]
-    bottom_row_labels = row_labels_arr[unselected_indices]
-
 
     updated_scatter.add_trace(go.Scatter(
         x = bottom_x_values,
@@ -1378,12 +1970,13 @@ def create_pca_scatter(principal_df, selected_indices, x_dd_value, y_dd_value):
         mode='markers',
         marker_color='blue',
         marker={
-            'size':2
+            'size':3
         },
-
+        legendgroup='Differentially Expressed Genes',
+        name='Non Differential Genes',
 
     ))
-
+    
     updated_scatter.add_trace(go.Scatter(
         x = top_x_values,
         y = top_y_values,
@@ -1393,13 +1986,14 @@ def create_pca_scatter(principal_df, selected_indices, x_dd_value, y_dd_value):
         marker={
             'size':7
         },
-
+        legendgroup='Non Differentially Expressed Genes',
+        name='Differential Genes',
 
     ))
 
     updated_scatter.update_layout(
         title={
-            'text': "Plot Title",
+            'text': "Scatter Plot",
             'y':0.9,
             'x':0.5,
             'xanchor': 'center',
@@ -1407,11 +2001,11 @@ def create_pca_scatter(principal_df, selected_indices, x_dd_value, y_dd_value):
         },
         autosize=True,
         xaxis=go.layout.XAxis(
-            title=str(', '.join(x_dd_value) + ' First Principal Component'),
+            title=str(', '.join(x_dd_value)),
             showgrid=True,
             ),
         yaxis=go.layout.YAxis(
-            title=str(', '.join(y_dd_value) + ' First Principal Component'),
+            title=str(', '.join(y_dd_value)),
             showgrid=True,  
             ),
         xaxis_type="log", 
@@ -1439,62 +2033,229 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
     '''
     Graphs the selected indices in a violin plot
     '''
+    color_option_1 = ['green', 'orange', 'yellow', 'white', 'grey']
+    color_option_2 = ['purple', 'black', 'pink', 'red', 'blue']
+    violin_type = violin_gene_number
     updated_violin = go.Figure()
-
+    print(violin_gene_number)
     reduced_x_df = main_df[x_dd_value]
     reduced_y_df = main_df[y_dd_value]
     x_names = " ".join(x_dd_value)
     y_names = " ".join(y_dd_value)
 
-
-
+    violin_gene_number = 10
+    all_figs = []
     show_legend = [True] + [False] * (violin_gene_number - 1)
-
-    for index, value  in enumerate(current_row_labels):
-        index_in_df = row_dict_hold[value]
-        updated_violin.add_trace(go.Violin(
-                    x=[value for i in range(len(reduced_x_df.columns))],
-                    y=list(reduced_x_df.iloc[index_in_df]),
-                    side='negative',
-                    legendgroup=x_names,
-                    name=x_names,
-                    line_color = 'green',
-                    showlegend = show_legend[index]
-                )
-            )
-        updated_violin.add_trace(go.Violin(
-                    x=[value for i in range(len(reduced_y_df.columns))],
-                    y=list(reduced_y_df.iloc[index_in_df]),
-                    side='positive',
-                    legendgroup = y_names,
-                    name =y_names,
-                    line_color = 'purple',
-                    showlegend = show_legend[index]
+    colors = ['green','purple']
+    fig = go.Figure()
+    if(violin_type == 'Scatter Plot'):
+        for index, value  in enumerate(current_row_labels):
+            if(index <= violin_gene_number):
+                index_in_df = row_dict_hold[value]
+                for choice, r_colors, selection_type in zip([reduced_x_df, reduced_y_df], [color_option_1, color_option_2], ['X Selection', 'Y Selection']):
+                    sub_types = [name[:-2] for name in choice.columns]
+                    reduced_sub_types = list(set(sub_types))
+                    count = 0
+                    for sub in reduced_sub_types:
+                        length_of_sub = sub_types.count(sub)
+                        cols = [x for i, x in enumerate(choice.columns) if x[:-2] == sub]
+                        rr_df = choice[cols]
+                        print(cols)
+                        rrr_df = list(rr_df.iloc[index_in_df])
 
 
-                )
-            )
+                        
+                        fig.add_trace(go.Scatter(
+                            x=rrr_df,
+                            y=[value] * len(rr_df),
+                            name=cols[0][:-2],
+                            showlegend = show_legend[index],
+                            marker=dict(
+                                color=r_colors[count],
+                                line_color=r_colors[count],
+                            ),
+                            hovertemplate =
+                                '<b>Expression</b>: %{x}'+
+                                '<br><b>Gene</b>: %{y}<br>'+
+                                '<b>Condition</b>  %{text}',
+                            text = cols,
+                        ))
+                        count += 1
 
-    updated_violin.update_layout(
-            title={
-                'text': "Violin Plot",
-                'y':0.9,
-                'x':0.5,
-                'xanchor': 'center',
-                'yanchor': 'top'
-            },
-            showlegend=True,
-            autosize=True,
-            violingap=0, 
-            violinmode='overlay',
-            yaxis_type="log",
+                fig.update_traces(mode='markers', marker=dict(line_width=3, symbol=42, size=16))
+                fig.update_layout(xaxis_type="log")
+    else:
+        all_dfs = []
+        counter = 0
+        for index, value  in enumerate(current_row_labels[:3]):
+            print(value)
+            if(index < 3):
+                counter +=1
+                index_in_df = row_dict_hold[value]
+                rr_x_df = list(reduced_x_df.iloc[index_in_df])
+                rr_y_df = list(reduced_y_df.iloc[index_in_df])
 
-        )
-    updated_violin.update_traces(points = 'all')
-    return updated_violin
+                figure={
+                    'data': [
+                        {
+                            'x': list(reduced_x_df.iloc[index_in_df]),
+                            'name': 'X Group',
+                            'type': 'histogram'
+                        },
+                        {
+                            'x': list(reduced_y_df.iloc[index_in_df]),
+                            'name': 'Y Group',
+                            'type': 'histogram'
+                        }
+                    ],
+                    'layout': {
+                        'barmode':'stack', 
+                        'title_text':value
+                    }
+                }
 
+                grouping = []
+                values = []
+                hover_info = []
+                colors = []
+                for count, col_name in enumerate(reduced_x_df.columns):
+                    colors.append('green')
+                    hover_info.append(col_name)
+                    grouping.append('X Group')
+                    values.append(rr_x_df[count])
+                for count, col_name in enumerate(reduced_y_df.columns):
+                    colors.append('purple')
+                    hover_info.append(col_name)
+                    grouping.append('Y Group')
+                    values.append(rr_y_df[count])
+
+                new_df = pd.DataFrame({
+                    'value':values,
+                    'Group':grouping,
+                    'hover_info':hover_info,
+                    'color':colors,
+                    'Gene Name':[value] * len(colors)
+
+                    })
+                all_dfs.append(new_df)
+
+                new_colors = {
+                    'X Group':'green',
+                    'Y Group':'purple'
+                }
+        final_df = pd.concat(all_dfs)
+        print(len(final_df))
+        count_list = list(final_df['value'])
+        start_val = min(count_list)
+        end_val = max(count_list)
+        bins = np.logspace(start_val - 1, end_val + 1, 15)
+        fig = px.histogram(final_df, x="value", color="Group", marginal="rug", # can be `box`, `violin`
+                                barmode="overlay", opacity=0.75, hover_name="hover_info", color_discrete_map = new_colors, facet_col = 'Gene Name', range_x=[start_val, end_val])
+        #fig.update_layout(xaxis_type="log")
+        #for count in range(counter):
+        #    fig['layout'][f'xaxis{str(counter + 1)}'].update(tickvals = bins)
+        #fig.update_xaxes(matches=None)
+        #for count in range(counter):
+        #    fig.update_xaxes(type="log", row = 1, col = count + 1)
+
+
+
+
+
+
+
+    
+
+    return fig
+
+def removeSuffixs(sentence):
+
+    suffixList = ["_X", "_Y"] #add more as nessecary
+
+    for item in suffixList:
+        if item in sentence:
+
+            sentence = sentence.replace(item, "")
+            repeatLetters = next((True for char, group in groupby(sentence)
+                                  if sum(1 for _ in group) >= 2), False)
+
+            if repeatLetters:
+
+                sentence = sentence[:-1]
+
+    return sentence 
 
 '''
+        fig = px.histogram(new_df, x="value", color="Group", marginal="rug", # can be `box`, `violin`
+                        barmode="overlay", nbins = 15, opacity=0.75, title = value, hover_name="hover_info", color_discrete_map = new_colors)
+        if(index == 1):
+            fig = px.histogram(new_df, x="value", color="Group", marginal="box", # can be `box`, `violin`
+                        barmode="overlay", nbins = 15, opacity=0.75, title = value, hover_name="hover_info", color_discrete_map = new_colors)
+    
+    for i, name in enumerate(final_names):
+        if(new_row_dict[name] in selected_indices):
+            top_x_values.append(final_x_values[i])
+            top_y_values.append(final_y_values[i])
+            top_row_labels.append(final_names[i])
+        else:
+            bottom_x_values.append(final_x_values[i])
+            bottom_y_values.append(final_y_values[i])
+            bottom_row_labels.append(final_names[i])
+
+
+    updated_scatter = go.Figure()
+
+    updated_scatter.add_trace(go.Scatter(
+        x = bottom_x_values,
+        y = bottom_y_values,
+        text = bottom_row_labels,
+        mode='markers',
+        marker_color='blue',
+        marker={
+            'size':3
+        },
+        legendgroup='Differentially Expressed Genes',
+        name='Non Differential Genes',
+
+    ))
+    
+    updated_scatter.add_trace(go.Scatter(
+        x = top_x_values,
+        y = top_y_values,
+        text = top_row_labels,
+        mode='markers',
+        marker_color='red',
+        marker={
+            'size':7
+        },
+        legendgroup='Non Differentially Expressed Genes',
+        name='Differential Genes',
+
+    ))
+
+    updated_scatter.update_layout(
+        title={
+            'text': "Scatter Plot",
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        autosize=True,
+        xaxis=go.layout.XAxis(
+            title=str(', '.join(x_dd_value)),
+            showgrid=True,
+            ),
+        yaxis=go.layout.YAxis(
+            title=str(', '.join(y_dd_value)),
+            showgrid=True,  
+            ),
+        xaxis_type="log", 
+        yaxis_type="log",
+        showlegend=True
+
+        )
+    return updated_scatter
 @app.callback(
         [
             Output(component_id='scatter_plot', component_property='figure'),
@@ -1539,7 +2300,7 @@ def update_button(n_clicks, x_dd_value, y_dd_value, combination_dd_value, indivi
     final_x_display.append(html.Br())
     final_y_display.append(html.Br())
 
-    if(individ_or_gene_dd == 'Gene'):
+    if(individ_or_gene_dd == 'Gene Focused'):
         updated_heatmap = gene_based_analysis(gene_select_dd, x_dd_value, y_dd_value)
         if(len(x_dd_value) > 1 and len(y_dd_value) > 1):
             updated_scatter = pca_by_gene(x_dd_value, y_dd_value)
@@ -1781,4 +2542,4 @@ def check_difference_measure_cache(cache, x_dd_value, y_dd_value):
 
 if __name__ == '__main__':
 
-    app.run_server()
+    app.run_server(debug=True)

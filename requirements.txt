@@ -8,10 +8,11 @@ chardet==3.0.4
 chart-studio==1.0.0
 Click==7.0
 cycler==0.10.0
-dash==1.9.0
+dash==1.14.0
 dash-bio==0.4.6
 dash-bootstrap-components==0.8.3
 dash-core-components==1.8.0
+dash-extensions==0.0.13
 dash-html-components==1.0.2
 dash-renderer==1.2.4
 dash-table==4.6.0
