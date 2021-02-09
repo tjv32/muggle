@@ -22,13 +22,14 @@ import base64
 import plotly.figure_factory as ff
 import plotly.express as px
 from itertools import groupby
+import datetime
 
 
 NUMBER_OF_GENES_IN_VIOLIN_PLOT = 5
 
 df = pd.read_csv(str(pathlib.Path("Gene_Expression_Data/GSE134896_FSKrepExpTable.csv")))
 
-
+HEAT_GENES = 50
 
 cluster_dict_three = {
     '3':[
@@ -49,7 +50,7 @@ def load_t_test_cache():
     cache = {}
     for i in range(len(all_files)):
         hold = pd.read_csv(file_dir / all_files[i])
-        #print(all_files[i])
+        ##print(all_files[i])
         cache[all_files[i][:-4]] = hold
 
     return cache
@@ -102,7 +103,7 @@ heatmap_Data = go.Heatmap(
         ],    # y-axis labels
     )
 layout_heatmap = go.Layout(
-        title='Heatmap',
+        title='',
         autosize=True,
         height=500,
         xaxis=go.layout.XAxis(
@@ -112,19 +113,10 @@ layout_heatmap = go.Layout(
             showgrid=True,
         )
     )
-fig_heatmap = go.Figure(data=[heatmap_Data], layout=layout_heatmap)
+fig_heatmap = go.Figure(data=None, layout=layout_heatmap)
 
 fig_scatter = go.Figure(
-        data = [
-            go.Scatter(
-                    x = list(df.loc[:, df.columns[0]]),
-                    y = list(df.loc[:, df.columns[1]]),
-                    mode='markers',
-                    marker={
-                        'size':5
-                    },
-                )
-            ],
+        data = None,
             layout =  go.Layout(
             title='Scatter Plot',
             autosize=True,
@@ -462,8 +454,6 @@ variable_dropdowns = html.Div(id='variable_dropdowns')
 variable_inputs = html.Div(id='variable_inputs')
 gene_column_select_label = html.Div(id='gene_column_select_label')
 gene_column_select = html.Div(id='gene_column_select')
-image_filename = 'study_img1.jpg' # replace with your own image
-encoded_image = base64.b64encode(open(image_filename, 'rb').read())
 
 loop_dict = {
     '1':2,
@@ -806,16 +796,13 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
     '''
         This callback takes all the dropdown menus and will calculate the differentially expressed genes and update the memory objects
     '''
-    print("CALLED")
     if(1==1):
         if(x_dd_value is None or y_dd_value is None):
-            print("first one")
             raise PreventUpdate
         x_num = len(x_dd_value)
         y_num = len(y_dd_value)
 
         if(x_num == 0 or y_num == 0):
-            print("second one")
             raise PreventUpdate
         if(default_data is None):
             defualt_data = load_default_data(1,1)
@@ -826,7 +813,6 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
         x_num = len(x_dd_value)
         y_num = len(y_dd_value)
 
-        print('hi')
 
 
         
@@ -834,7 +820,11 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
         orig_fold = main_data['fold_filter']
         orig_var = main_data['var_filter']
 
+        #print("orig_fold", type(orig_fold), orig_fold)
+        #print("orig_var", type(orig_var), orig_var)
 
+        #print("fold_filter", type(fold_filter), fold_filter)
+        #print("var_filter", type(var_filter), var_filter)
 
         main_df = pd.DataFrame(main_data['main_df'])
 
@@ -846,7 +836,6 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
 
         x_dff = main_df.loc[:, x_dd_value]
         y_dff = main_df.loc[:, y_dd_value]
-        print('preprocessing done')
         if(individ_or_gene_dd == 'Condition Focused'):
 
             if(name_memory is not None and x_dd_value == name_memory['x_dd'] and y_dd_value == name_memory['y_dd']
@@ -857,18 +846,20 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
                 gene_diff_df = pd.DataFrame(scatter_mem['df1'])
 
             else:
-                print('this should happen')
                 gene_diff_df = find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data, True)
-                print('this happened')
 
         else:
 
             gene_diff_df = find_differentially_expressed_genes(x_dff, y_dff, combination_dd_value, main_data)
-        
+        start1 = datetime.datetime.now()
         heat_dict = create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, individ_or_gene_dd, main_data)
-
+        start2 = datetime.datetime.now()
+        #print("scatter_memeory time ",str(start2 - start1))
         scatter_dict = create_scatter_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, individ_or_gene_dd, main_data)
 
+        start3 = datetime.datetime.now()
+
+        #print("scatter_memeory time ",str(start3 - start2))
         x_display, y_display = create_x_y_group_display_names(x_dd_value, y_dd_value)
 
         name_memory = {
@@ -897,6 +888,7 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
             Output('input_combo_6', 'options'),
             Output('input_combo_7', 'options'),
             Output('input_combo_8', 'options'),
+            Output('cluster_selection_dd', 'options'),
         ],
         [
             Input('temp_data', 'data'),
@@ -907,7 +899,7 @@ def update_button_main(n_clicks, main_data, x_dd_value, y_dd_value, gene_select_
         
 )
 def update_main_memory(temp_data, n_clicks):
-    print("IS THIS HAPPENING??????????????????????????")
+    #print("IS THIS HAPPENING??????????????????????????")
     if(n_clicks is None):
         n_clicks = 0
     if(temp_data is None):
@@ -915,28 +907,31 @@ def update_main_memory(temp_data, n_clicks):
     else:
         main_data = temp_data
 
-    return main_data, n_clicks+1, main_data['gene_drop_down_options'], main_data['gene_drop_down_options'], main_data['single_gene_options'], main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options']
+    return main_data, n_clicks+1, main_data['gene_drop_down_options'], main_data['gene_drop_down_options'], main_data['single_gene_options'], main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'],main_data['gene_drop_down_options'], main_data['single_gene_options']
 
 @app.callback(
         
             Output(component_id='heatmap', component_property='figure'),
         [
             Input('heatmap_memory', 'data'),
-            Input("scatter_plot", "selectedData"),
         ],
 
 )
-def update_heatmap(memory, selected_data):
+def update_heatmap(memory):
     '''
         This callback uses the heat map memory store and any selected data in the scatter plot to update the heatmap
     '''
+    #print("staritng heat call")
     if(memory is None):
         raise PreventUpdate
+
+    start1 = datetime.datetime.now()
+
     name_adj_heat_df = pd.DataFrame(memory['original'])
     name_adj_normal_heat_df = pd.DataFrame(memory['normal'])
 
     current_row_labels = memory['current_row_labels']
-
+    #print("staritng heat call1")
     try:    
         max_val = name_adj_normal_heat_df.values.max()
         min_val = name_adj_normal_heat_df.values.min()
@@ -953,6 +948,7 @@ def update_heatmap(memory, selected_data):
             zmax=max(max_val + 0.2, 0.5),
             zmin= min(min_val - 0.2, -0.5),
         )
+    #print("staritng heat call2")
     '''
     [
                 [0.0, "rgb(49,54,149)"],
@@ -984,8 +980,11 @@ def update_heatmap(memory, selected_data):
                 showgrid=True,
             )
         )
+    #print("staritng heat call3")
     fig_heatmap = go.Figure(data=[heatmap_Data], layout=layout_heatmap)
-
+    start2 = datetime.datetime.now()
+    #print("heatmap callback graph", start2 - start1)
+    #print("staritng heat call4")
     return fig_heatmap
 
 one_combo = {
@@ -1054,7 +1053,7 @@ def arrange_cluster_points(x_location_center, y_location_center, combo_group, st
 )
 def update_cluster_button(n_clicks, main_data, input_combo_1, input_combo_2,input_combo_3, input_combo_4, input_combo_5, input_combo_6, input_combo_7, input_combo_8, input_combo):
 
-    print("AHHHHHHHHHHHHH")
+    #print("AHHHHHHHHHHHHH")
 
     if(n_clicks == 0 or main_data is None):
         raise PreventUpdate
@@ -1094,8 +1093,8 @@ def update_cluster_button(n_clicks, main_data, input_combo_1, input_combo_2,inpu
 
         total_num = total_num + len(current_combo)
 
-    print("finished updating cluster data")
-    print(orientation)
+    #print("finished updating cluster data")
+    #print(orientation)
 
     return {'single_row_names':single_row_names, 'x_locs':x_locs, 
             'y_locs':y_locs, 'orientation':orientation, 'show_text': show_text}
@@ -1117,11 +1116,11 @@ def update_cluster(cluster_dd, cluster_data):
     '''
         This callback uses the scatter plot memory store and any selected data in the heatmap to update the scatter plot
     '''
-    print("we doing something")
+    #print("we doing something")
     if(cluster_data is None):
-        print("right here?")
+        #print("right here?")
         single_row = df_with_names[df_with_names['Gene_Name'] == cluster_dd]
-        print(single_row)
+        #print(single_row)
         all_columns = df.columns
         layout = go.Layout(
         title = 'Clusters',
@@ -1158,8 +1157,8 @@ def update_cluster(cluster_dd, cluster_data):
         for column in single_row.columns:
             entries = list(single_row[column])
             if(column != 'Gene_Name' and len(entries) > 0):
-                #print(single_row[column])
-                #print(single_row[column][0])
+                ##print(single_row[column])
+                ##print(single_row[column][0])
                 
                 all_vals.append(entries[0])
         counter = 0
@@ -1177,8 +1176,8 @@ def update_cluster(cluster_dd, cluster_data):
                 counter = counter + 1
                 if(counter == 3):
                     counter = 0
-        print(markers)
-        fig = go.Figure(go.Scatter(x =x, y=y, mode='markers+text', 
+        #print(markers)
+        fig = go.Figure(go.Scattergl(x =x, y=y, mode='markers+text', 
                                    text=modes,
                                  marker_size=25,
                                 textposition= ['middle left', 'top center', 'middle right', 
@@ -1191,14 +1190,14 @@ def update_cluster(cluster_dd, cluster_data):
                                                'bottom left', 'top center', 'bottom right'],
                                 hovertext=hover_text,
                                 marker_color=markers), layout=layout)
-        print("FINISHED")
+        #print("FINISHED")
     else:
-        print("starting updating figure")
-        print(cluster_dd)
+        #print("starting updating figure")
+        #print(cluster_dd)
         single_row = df_with_names[df_with_names['Gene_Name'] == cluster_dd]
-        print(single_row)
-        print("bah")
-        print(cluster_data['single_row_names'])
+        #print(single_row)
+        #print("bah")
+        #print(cluster_data['single_row_names'])
         all_columns = df.columns
         layout = go.Layout(
         title = 'Clusters',
@@ -1228,21 +1227,21 @@ def update_cluster(cluster_dd, cluster_data):
         single_row_list = list(single_row)
         modes = []
         all_vals = []
-        print("COLUMN PRINT")
+        #print("COLUMN PRINT")
         for column in cluster_data['single_row_names']:
-            print(column)
+            #print(column)
             entries = list(single_row[column])
             if(column != 'Gene_Name' and len(entries) > 0):
-                #print(single_row[column])
-                #print(single_row[column][0])
+                ##print(single_row[column])
+                ##print(single_row[column][0])
                 
                 all_vals.append(entries[0])
         counter = 0
         for column in cluster_data['single_row_names']:
             entries = list(single_row[column])
             if(column != 'Gene_Name' and len(entries) > 0):
-                print(counter)
-                print(counter in cluster_data['show_text'])
+                #print(counter)
+                #print(counter in cluster_data['show_text'])
                 #markers.append(f'rgba(60,179,113,{normalize_gene(entries[0] + 0.01)})')#, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)})')
                 markers.append(f'rgba(60,179,113,{max([0.01,min([1, normalize_gene(entries[0] + 0.01, min_value = min(all_vals), max_value = max(all_vals), log_transform = False)])])})')
                 hover_text.append(f"{column}<br>{round(entries[0], 1)}")
@@ -1253,18 +1252,18 @@ def update_cluster(cluster_dd, cluster_data):
                 
                 counter = counter + 1
 
-        print(markers)
-        print(cluster_data['show_text'])
-        print(cluster_data['x_locs'])
-        print(cluster_data['y_locs'])
-        print(modes)
-        fig = go.Figure(go.Scatter(x =cluster_data['x_locs'], y=cluster_data['y_locs'], mode='markers+text', 
+        #print(markers)
+        #print(cluster_data['show_text'])
+        #print(cluster_data['x_locs'])
+        #print(cluster_data['y_locs'])
+        #print(modes)
+        fig = go.Figure(go.Scattergl(x =cluster_data['x_locs'], y=cluster_data['y_locs'], mode='markers+text', 
                                    text=modes,
                                  marker_size=25,
                                 textposition= cluster_data['orientation'],
                                 hovertext=hover_text,
                                 marker_color=markers), layout=layout)
-        print("FINISHED")
+        #print("FINISHED")
 
     return fig
 
@@ -1287,6 +1286,8 @@ def update_scatter(memory, main_data):
     if(memory is None):
         raise PreventUpdate
 
+
+    start1 = datetime.datetime.now()
     stored_mem1 = memory['df1']
     stored_mem2 = memory.get('df2')
 
@@ -1298,6 +1299,9 @@ def update_scatter(memory, main_data):
     else:
         stored_mem3 = memory['names']
         scatter_figure = create_gene_based_scatter(pd.DataFrame(stored_mem1), memory['selected_indices'], stored_mem3[0], stored_mem3[1], main_data)
+
+    start2 = datetime.datetime.now()
+    #print("scatter callback update time", start2 - start1)
 
     return scatter_figure
 
@@ -1325,6 +1329,7 @@ def update_violin(scatter_selected_data, memory, violin_gene_number, name_memory
         not set(memory['y_dd']).issubset(set(pd.DataFrame((main_data['main_df'])).columns))):
         raise PreventUpdate
 
+    start1 = datetime.datetime.now()
     main_df = pd.DataFrame((main_data['main_df']))
 
     current_row_labels = memory['current_row_labels']
@@ -1346,7 +1351,8 @@ def update_violin(scatter_selected_data, memory, violin_gene_number, name_memory
 
     violin_figure = update_violin_plot(current_row_labels, name_memory['x_dd'], name_memory['y_dd'], violin_gene_number, main_df, main_data['row_dict'])
 
-    
+    start2 = datetime.datetime.now()
+    #print("violin callback update time", start2 - start1)
 
     return violin_figure
 
@@ -1402,7 +1408,7 @@ def change_drop_down_options(input_data, x_dd_value, y_dd_value):
     if(input_data is None):
         raise PreventUpdate
 
-    print(input_data['gene_drop_down_options'])
+    #print(input_data['gene_drop_down_options'])
     return input_data['gene_drop_down_options'], input_data['gene_drop_down_options'], input_data['single_gene_options']
 '''
 @app.callback(
@@ -1497,7 +1503,7 @@ def generate_csv(n_nlicks, data):
     for val in d_df.columns:
         if(val.endswith('_X') or val.endswith('_Y')):
             rename_dict[val] = val[:len(val)-2]
-    print(rename_dict)
+    #print(rename_dict)
     d_df = d_df.rename(rename_dict, axis=1)
     column_names_download = list(d_df.columns)
 
@@ -1732,6 +1738,7 @@ def create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
     '''
     Uses the gene_diff_df to create a heat df and normalized df that will be used to create heatmap
     '''
+    #print("we updating heatmap mem")
     main_df = pd.DataFrame(main_data['main_df'])
     new_row_labels = main_data['row_labels']
     new_row_dict = main_data['row_dict']
@@ -1747,8 +1754,8 @@ def create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
         heat_df = main_df.iloc[main_df.index.isin(gene_select_indices)]
 
     else:
-        gene_select_indices = list(gene_diff_df['original_index'])[:100]
-        heat_df = main_df.iloc[list(gene_diff_df['original_index'])[:100]]
+        gene_select_indices = list(gene_diff_df['original_index'])[:HEAT_GENES]
+        heat_df = main_df.iloc[list(gene_diff_df['original_index'])[:HEAT_GENES]]
     
     current_row_labels = [new_row_labels[index] for index in gene_select_indices]
 
@@ -1778,6 +1785,7 @@ def create_heatmap_memory(gene_diff_df, x_dd_value, y_dd_value, gene_select_dd, 
         'y_dd' : y_dd_value,
 
     }
+    #print("finsihed update heatmap mem")
 
     return heat_dict
 
@@ -1860,7 +1868,7 @@ def create_scatter_diff_genes(gene_diff_df, x_dd_value, y_dd_value):
     Creates the scatter plot based upon the differentially expressed genes
     '''
     gene_diff_df.sort_values(by = ["absolute difference measure"], inplace=True, ascending=False)
-    top_hundred_indices = list(gene_diff_df['original_index'])[:100]
+    top_hundred_indices = list(gene_diff_df['original_index'])[:HEAT_GENES]
     bottom_gene = gene_diff_df[~gene_diff_df['original_index'].isin(top_hundred_indices)]
     bottom_gene_indices = gene_diff_df['original_index']
 
@@ -1869,18 +1877,18 @@ def create_scatter_diff_genes(gene_diff_df, x_dd_value, y_dd_value):
     final_y_values = list(gene_diff_df['y_vals'])
     final_names = list(gene_diff_df['gene name'])
 
-    top_x_values= final_x_values[:100]
-    top_y_values= final_y_values[:100]
-    top_row_labels = final_names[:100]
+    top_x_values= final_x_values[:HEAT_GENES]
+    top_y_values= final_y_values[:HEAT_GENES]
+    top_row_labels = final_names[:HEAT_GENES]
 
 
-    bottom_x_values= final_x_values[100:]
-    bottom_y_values= final_y_values[100:]
-    bottom_row_labels = final_names[100:]
+    bottom_x_values= final_x_values[HEAT_GENES:]
+    bottom_y_values= final_y_values[HEAT_GENES:]
+    bottom_row_labels = final_names[HEAT_GENES:]
 
     updated_scatter = go.Figure()
 
-    updated_scatter.add_trace(go.Scatter(
+    updated_scatter.add_trace(go.Scattergl(
         x = bottom_x_values,
         y = bottom_y_values,
         text = bottom_row_labels,
@@ -1894,7 +1902,7 @@ def create_scatter_diff_genes(gene_diff_df, x_dd_value, y_dd_value):
 
     ))
     
-    updated_scatter.add_trace(go.Scatter(
+    updated_scatter.add_trace(go.Scattergl(
         x = top_x_values,
         y = top_y_values,
         text = top_row_labels,
@@ -1963,7 +1971,7 @@ def create_gene_based_scatter(gene_diff_df, selected_indices, x_dd_value, y_dd_v
 
     updated_scatter = go.Figure()
 
-    updated_scatter.add_trace(go.Scatter(
+    updated_scatter.add_trace(go.Scattergl(
         x = bottom_x_values,
         y = bottom_y_values,
         text = bottom_row_labels,
@@ -1977,7 +1985,7 @@ def create_gene_based_scatter(gene_diff_df, selected_indices, x_dd_value, y_dd_v
 
     ))
     
-    updated_scatter.add_trace(go.Scatter(
+    updated_scatter.add_trace(go.Scattergl(
         x = top_x_values,
         y = top_y_values,
         text = top_row_labels,
@@ -2037,7 +2045,7 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
     color_option_2 = ['purple', 'black', 'pink', 'red', 'blue']
     violin_type = violin_gene_number
     updated_violin = go.Figure()
-    print(violin_gene_number)
+    ##print(violin_gene_number)
     reduced_x_df = main_df[x_dd_value]
     reduced_y_df = main_df[y_dd_value]
     x_names = " ".join(x_dd_value)
@@ -2049,7 +2057,7 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
     colors = ['green','purple']
     fig = go.Figure()
     if(violin_type == 'Scatter Plot'):
-        for index, value  in enumerate(current_row_labels):
+        for index, value  in enumerate(current_row_labels[:5]):
             if(index <= violin_gene_number):
                 index_in_df = row_dict_hold[value]
                 for choice, r_colors, selection_type in zip([reduced_x_df, reduced_y_df], [color_option_1, color_option_2], ['X Selection', 'Y Selection']):
@@ -2060,12 +2068,12 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
                         length_of_sub = sub_types.count(sub)
                         cols = [x for i, x in enumerate(choice.columns) if x[:-2] == sub]
                         rr_df = choice[cols]
-                        print(cols)
+                        ##print(cols)
                         rrr_df = list(rr_df.iloc[index_in_df])
 
-
+                        ##print("ahhhhh")
                         
-                        fig.add_trace(go.Scatter(
+                        fig.add_trace(go.Scattergl(
                             x=rrr_df,
                             y=[value] * len(rr_df),
                             name=cols[0][:-2],
@@ -2088,7 +2096,7 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
         all_dfs = []
         counter = 0
         for index, value  in enumerate(current_row_labels[:3]):
-            print(value)
+            ##print(value)
             if(index < 3):
                 counter +=1
                 index_in_df = row_dict_hold[value]
@@ -2144,7 +2152,7 @@ def update_violin_plot(current_row_labels, x_dd_value, y_dd_value, violin_gene_n
                     'Y Group':'purple'
                 }
         final_df = pd.concat(all_dfs)
-        print(len(final_df))
+        #print(len(final_df))
         count_list = list(final_df['value'])
         start_val = min(count_list)
         end_val = max(count_list)
@@ -2281,8 +2289,8 @@ def removeSuffixs(sentence):
 def update_button(n_clicks, x_dd_value, y_dd_value, combination_dd_value, individ_or_gene_dd, violin_gene_number, gene_select_dd, scatter, violin):
     x_dd_value = combine_columns(x_dd_value)
     y_dd_value = combine_columns(y_dd_value)
-    print(x_dd_value)
-    print(y_dd_value)
+    #print(x_dd_value)
+    #print(y_dd_value)
     x_names = " ".join(x_dd_value)
     y_names = " ".join(y_dd_value)
 
@@ -2322,7 +2330,7 @@ def update_button(n_clicks, x_dd_value, y_dd_value, combination_dd_value, indivi
             elif(valid_selection == 'Groups'):
                 file_path, cache_exists, top_hundred_genes, difference_measure = check_difference_measure_cache(cache, x_dd_value, y_dd_value)
                 if(cache_exists):
-                    print('Used Cache')
+                    #print('Used Cache')
                     top_graphed_genes = top_hundred_genes[:violin_gene_number]
                 else:
                     difference_measure = np.array(df.apply(differentially_expressed_genes_t_test, args = [x_dd_value, y_dd_value], axis = 1))
@@ -2346,7 +2354,7 @@ def update_button(n_clicks, x_dd_value, y_dd_value, combination_dd_value, indivi
 
 
 
-    print('Finished Updating')
+    #print('Finished Updating')
     return updated_scatter, updated_violin, updated_heatmap, final_x_display, final_y_display 
 @app.callback(
         [
@@ -2365,7 +2373,7 @@ def update_button(n_clicks, x_dd_value, y_dd_value, combination_dd_value, indivi
         ]
 )
 def make_individual_figure(main_scatter_hover, x_dd_value, y_dd_value, individ_or_gene, scatter_plot):
-    print(main_scatter_hover)
+    #print(main_scatter_hover)
     return scatter_plot
 def gene_based_analysis(gene_select_dd, x_dd_value, y_dd_value):
 
@@ -2525,7 +2533,7 @@ def check_difference_measure_cache(cache, x_dd_value, y_dd_value):
     current_key = 'sep'.join(cols)
     file_path = str(pathlib.Path('Preterm Birth Gene Data/t_test_cache/' + current_key + '.csv'))
     if(1==2 and cache.get(current_key) is not None):
-        print(current_key)
+        #print(current_key)
         cache_df = cache[current_key]
         indices = np.array(cache_df['indices'])
         difference_measure = np.array(cache_df['difference_measure'])
@@ -2539,7 +2547,9 @@ def check_difference_measure_cache(cache, x_dd_value, y_dd_value):
     return file_path, path_exists, indices, difference_measure
 '''
 
+app.css.config.serve_locally = True
+app.scripts.config.serve_locally = True
 
 if __name__ == '__main__':
 
-    app.run_server(debug=True)
+    app.run_server(debug=False)
